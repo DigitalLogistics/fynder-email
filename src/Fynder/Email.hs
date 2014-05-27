@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
-module MusicBrainz.Email
+module Fynder.Email
     ( Email(..)
     , Template(..)
 
@@ -24,11 +25,9 @@ module MusicBrainz.Email
     , enqueueEmail
     ) where
 
---------------------------------------------------------------------------------
+import Data.Text (Text)
 import GHC.Generics (Generic)
 
-
---------------------------------------------------------------------------------
 import qualified Data.Aeson as Aeson
 import qualified Data.Text as Text
 import qualified Network.AMQP as AMQP
@@ -63,9 +62,9 @@ instance Aeson.FromJSON Template
 instance Aeson.ToJSON Template
 
 --------------------------------------------------------------------------------
-outboxExchange, failureExchange :: String
-invalidKey, unroutableKey :: String
-outboxQueue, unroutableQueue, invalidQueue :: String
+outboxExchange, failureExchange :: Text
+invalidKey, unroutableKey :: Text
+outboxQueue, unroutableQueue, invalidQueue :: Text
 
 outboxExchange = "outbox"
 failureExchange = "failure"

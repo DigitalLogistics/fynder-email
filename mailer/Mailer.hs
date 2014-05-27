@@ -1,24 +1,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Mailer where
 
---------------------------------------------------------------------------------
-import Prelude hiding (catch)
-
-
---------------------------------------------------------------------------------
 import Control.Applicative ((<$>))
 import Control.Exception (SomeException, try)
 import Control.Monad (void)
+import Data.Aeson ((.=))
 import Data.Functor.Identity (Identity, runIdentity)
 import Data.Monoid (mempty)
+import Heist ((##))
 
-import Data.Aeson ((.=))
-
---------------------------------------------------------------------------------
 import qualified Blaze.ByteString.Builder as Builder
 import qualified Control.Error as Error
 import qualified Data.Aeson as Aeson
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as Text
+import qualified Fynder.Email as Email
 import qualified Heist as Heist
 import qualified Heist.Interpreted as Heist
 import qualified Network.AMQP as AMQP
@@ -26,9 +23,7 @@ import qualified Network.HTTP as HTTP
 import qualified Network.Mail.Mime as Mail
 import qualified Text.XmlHtml as XmlHtml
 
---------------------------------------------------------------------------------
-import qualified MusicBrainz.Email as Email
-import qualified Paths_musicbrainz_email as Email
+import qualified Paths_fynder_email as Email
 
 
 --------------------------------------------------------------------------------
@@ -56,7 +51,7 @@ emailToMail email heist = runIdentity $
     (Email.PasswordReset _) -> "password-reset"
 
   templateBindings = case template of
-    (Email.PasswordReset editor) -> [("editor", editor)]
+    (Email.PasswordReset editor) -> "editor" ## editor
 
   emailSubject = case template of
     (Email.PasswordReset _) -> "Mandatory Password Reset"
@@ -100,11 +95,15 @@ consumeOutbox rabbitMqConn heist sendMail = do
  where
 
   unableToDecode msg =
-    AMQP.newMsg { AMQP.msgBody = Aeson.encode $ Aeson.object
-                   [ "error" .= ("Could not decode JSON" :: String)
-                   , "json" .= AMQP.msgBody msg
-                   ]
-                }
+    let errorMessage = case Aeson.decode (AMQP.msgBody msg) :: Maybe Aeson.Value of
+          Just _  -> "Unknown JSON schema"
+          Nothing -> "Malformed JSON syntax"
+
+    in AMQP.newMsg { AMQP.msgBody = Aeson.encode $ Aeson.object
+                      [ "error" .= (errorMessage :: String)
+                      , "json" .= Text.decodeUtf8 (LBS.toStrict (AMQP.msgBody msg))
+                      ]
+                   }
 
   trySendEmail email = tryFormEmail >>= trySend
 
@@ -136,5 +135,7 @@ loadTemplates :: Monad m => IO (Heist.HeistState m)
 loadTemplates = fmap (either (error . show) id) $ do
   templatesDir <- Email.getDataFileName "templates"
   Error.runEitherT $ do
-    templateRepo <- Heist.loadTemplates templatesDir
-    Heist.initHeist mempty { Heist.hcTemplates = templateRepo }
+    Heist.initHeist mempty
+      { Heist.hcTemplateLocations =
+          [ Heist.loadTemplates templatesDir ]
+      }
