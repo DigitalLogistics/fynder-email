@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 module Fynder.Messaging
-    ( RabbitMQConnection(..)
+    ( RabbitMQConfig(..)
     , connect
     , rabbitOptparse
     ) where
@@ -14,24 +14,25 @@ import qualified Network.AMQP as AMQP
 import qualified Options.Applicative as Optparse
 
 --------------------------------------------------------------------------------
-data RabbitMQConnection = RabbitMQConnection
+data RabbitMQConfig = RabbitMQConfig
   { rabbitHost :: String
   , rabbitVHost :: Text
   , rabbitUser :: Text
   , rabbitPassword :: Text
   }
+  deriving (Eq, Read, Show)
 
 
 --------------------------------------------------------------------------------
-connect :: RabbitMQConnection -> IO AMQP.Connection
-connect RabbitMQConnection {..} =
+connect :: RabbitMQConfig -> IO AMQP.Connection
+connect RabbitMQConfig {..} =
   AMQP.openConnection rabbitHost rabbitVHost rabbitUser rabbitPassword
 
 
 --------------------------------------------------------------------------------
-rabbitOptparse :: Optparse.Parser RabbitMQConnection
+rabbitOptparse :: Optparse.Parser RabbitMQConfig
 rabbitOptparse =
-  RabbitMQConnection
+  RabbitMQConfig
     <$> Optparse.strOption (mconcat [ Optparse.long "rabbit-host"
                                     , Optparse.value "127.0.0.1"
                                     , Optparse.help "RabbitMQ host"

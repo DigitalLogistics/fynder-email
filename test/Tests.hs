@@ -65,7 +65,7 @@ main = do
     <*> opt "db.password" PG.connectPassword
     <*> opt "db.database" PG.connectDatabase
 
-  rabbitMqConf <- Messaging.RabbitMQConnection
+  rabbitMqConf <- Messaging.RabbitMQConfig
     <$> Configurator.require testConfig "rabbitmq.host"
     <*> Configurator.require testConfig "rabbitmq.vhost"
     <*> Configurator.require testConfig "rabbitmq.user"
@@ -83,7 +83,7 @@ main = do
 
 
 --------------------------------------------------------------------------------
-enqueuePasswordResets :: PG.ConnectInfo -> Messaging.RabbitMQConnection -> Tests.Test
+enqueuePasswordResets :: PG.ConnectInfo -> Messaging.RabbitMQConfig -> Tests.Test
 enqueuePasswordResets pgConf rabbitConf = withTimeOut $
   Tests.testGroup "Enqueueing password reset emails"
     [ Tests.testCase "Will send password reset emails to editors with old login date and confirmed email address" $
@@ -210,7 +210,7 @@ deriving instance Show Mail.Mail
 deriving instance Eq Mail.Part
 deriving instance Show Mail.Part
 
-messagesAreSent :: Messaging.RabbitMQConnection -> Tests.Test
+messagesAreSent :: Messaging.RabbitMQConfig -> Tests.Test
 messagesAreSent rabbitConf = withTimeOut $
   Tests.testCase "Emails in outbox are sent by outbox consumer" $ do
     withRabbitMq rabbitConf $ \(rabbitMq, rabbitMqConn) -> do
@@ -243,7 +243,7 @@ testEmail = Email.Email
 
 
 --------------------------------------------------------------------------------
-invalidMessageRouting :: Messaging.RabbitMQConnection -> Tests.Test
+invalidMessageRouting :: Messaging.RabbitMQConfig -> Tests.Test
 invalidMessageRouting rabbitConf = withTimeOut $
   Tests.testCase "Unparsable emails are forwarded to outbox.invalid" $ do
     withRabbitMq rabbitConf $ \(rabbitMq, rabbitMqConn) -> do
@@ -267,7 +267,7 @@ invalidMessageRouting rabbitConf = withTimeOut $
 
 
 --------------------------------------------------------------------------------
-sendMailFailureRouting :: Messaging.RabbitMQConnection -> Tests.Test
+sendMailFailureRouting :: Messaging.RabbitMQConfig -> Tests.Test
 sendMailFailureRouting rabbitConf = withTimeOut $
   Tests.testCase "If sendmail doesn't exit cleanly, messages are forwarded to outbox.unroutable" $ do
     withRabbitMq rabbitConf $ \(rabbitMq, rabbitMqConn) -> do
@@ -291,7 +291,7 @@ sendMailFailureRouting rabbitConf = withTimeOut $
 
 
 --------------------------------------------------------------------------------
-heistFailureRouting :: Messaging.RabbitMQConnection -> Tests.Test
+heistFailureRouting :: Messaging.RabbitMQConfig -> Tests.Test
 heistFailureRouting rabbitConf = withTimeOut $
   Tests.testCase "If Heist can't expand the template, messages are forwarded to outbox.unroutable" $ do
     withRabbitMq rabbitConf $ \(rabbitMq, rabbitMqConn) -> do
@@ -313,7 +313,7 @@ heistFailureRouting rabbitConf = withTimeOut $
 
 
 --------------------------------------------------------------------------------
-withRabbitMq :: Messaging.RabbitMQConnection -> ((AMQP.Channel, AMQP.Connection) -> IO a) -> IO a
+withRabbitMq :: Messaging.RabbitMQConfig -> ((AMQP.Channel, AMQP.Connection) -> IO a) -> IO a
 withRabbitMq rabbitConf = bracket acquire release
  where
 

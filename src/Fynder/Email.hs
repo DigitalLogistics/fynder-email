@@ -29,7 +29,7 @@ import Data.Text (Text)
 import GHC.Generics (Generic)
 
 import qualified Data.Aeson as Aeson
-import qualified Data.Text as Text
+import qualified Fynder.Types as Fynder
 import qualified Network.AMQP as AMQP
 import qualified Network.Mail.Mime as Mail
 
@@ -54,7 +54,10 @@ instance Aeson.ToJSON Email
 
 
 --------------------------------------------------------------------------------
-data Template = PasswordReset { passwordResetEditor :: Text.Text }
+data Template
+  = ClassSpaceAvailable { csaCustomerProfileId :: Fynder.CustomerProfileId
+                        , csaClassId :: Fynder.ClassId
+                        }
   deriving (Eq, Generic, Show)
 
 instance Aeson.FromJSON Template
@@ -90,13 +93,13 @@ establishRabbitMqConfiguration rabbitMq = do
                      }
 
 
-  AMQP.declareQueue rabbitMq
+  _ <- AMQP.declareQueue rabbitMq
     AMQP.newQueue { AMQP.queueName = outboxQueue }
 
-  AMQP.declareQueue rabbitMq
+  _ <- AMQP.declareQueue rabbitMq
     AMQP.newQueue { AMQP.queueName = invalidQueue }
 
-  AMQP.declareQueue rabbitMq
+  _<- AMQP.declareQueue rabbitMq
     AMQP.newQueue { AMQP.queueName = unroutableQueue }
 
 
