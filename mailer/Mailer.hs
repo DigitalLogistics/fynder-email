@@ -3,40 +3,60 @@ module Mailer where
 
 import Control.Applicative ((<$>))
 import Control.Exception (SomeException, try)
+import Control.Lens ((^.))
 import Control.Monad (void)
+import Control.Error.Util ((!?))
+import Control.Monad.Trans.Maybe (MaybeT(MaybeT), runMaybeT)
 import Data.Aeson ((.=))
-import Data.Functor.Identity (Identity, runIdentity)
 import Data.Monoid (mempty)
 import Heist ((##))
 
 import qualified Blaze.ByteString.Builder as Builder
 import qualified Control.Error as Error
+import qualified Control.Lens as Lens
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Pool as Pool
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
+import qualified Data.Time as Time
+import qualified Database.PostgreSQL.Simple as Pg
+import qualified Fynder.Db.Read as FQ
 import qualified Fynder.Email as Email
+import qualified Fynder.Types as Fynder
+import qualified Fynder.Types.Model.Class as Class
+import qualified Fynder.Types.Model.ClassTemplate as ClassTemplate
+import qualified Fynder.Types.Model.ClassType as ClassType
+import qualified Fynder.Types.Model.CustomerProfile as CustomerProfile
+import qualified Fynder.Types.Model.Studio as Studio
+import qualified Fynder.Types.Model.User as User
 import qualified Heist as Heist
 import qualified Heist.Interpreted as Heist
 import qualified Network.AMQP as AMQP
 import qualified Network.HTTP as HTTP
 import qualified Network.Mail.Mime as Mail
+import qualified System.Locale as Locale
 import qualified Text.XmlHtml as XmlHtml
 
 import qualified Paths_fynder_email as Email
 
 
 --------------------------------------------------------------------------------
-emailToMail :: Email.Email -> Heist.HeistState Identity -> Maybe Mail.Mail
-emailToMail email heist = runIdentity $
-  Heist.evalHeistT
+emailToMail
+  :: Email.Email
+  -> Heist.HeistState Fynder.DbRO
+  -> Fynder.DbRO (Maybe Mail.Mail)
+emailToMail email heist = runMaybeT $ do
+  splices <- templateSplices
+  MaybeT $ Heist.evalHeistT
     mailBuilder
     (XmlHtml.TextNode "")
     (Heist.bindSplice "urlEncode" urlEncode $
-     Heist.bindStrings templateBindings heist)
+     Heist.bindSplices splices heist)
 
  where
 
+  ------------------------------------------------------------------------------
   urlEncode =
     map (XmlHtml.TextNode . Text.pack . HTTP.urlEncode . Text.unpack . XmlHtml.nodeText)
       <$> Heist.runChildren
@@ -47,22 +67,13 @@ emailToMail email heist = runIdentity $
 
   template = Email.emailTemplate email
 
-  templatePath = case template of
-    (Email.PasswordReset _) -> "password-reset"
-
-  templateBindings = case template of
-    (Email.PasswordReset editor) -> "editor" ## editor
-
-  emailSubject = case template of
-    (Email.PasswordReset _) -> "Mandatory Password Reset"
-
   makeMail messageBody = Mail.Mail
     { Mail.mailFrom = Email.emailFrom email
     , Mail.mailTo = [ Email.emailTo email ]
     , Mail.mailCc = []
     , Mail.mailBcc = []
     , Mail.mailHeaders = [("Subject", emailSubject)]
-    , Mail.mailParts = [ [ Mail.Part { Mail.partType = "text/plain; charset=UTF-8"
+    , Mail.mailParts = [ [ Mail.Part { Mail.partType = "text/html; charset=UTF-8"
                                      , Mail.partEncoding = Mail.None
                                      , Mail.partFilename = Nothing
                                      , Mail.partHeaders = []
@@ -70,16 +81,48 @@ emailToMail email heist = runIdentity $
                                      } ] ]
     }
 
+  ------------------------------------------------------------------------------
+  templatePath = case template of
+    (Email.ClassSpaceAvailable{}) -> "space-available"
+
+  templateSplices = case template of
+    (Email.ClassSpaceAvailable customerProfileId classId) -> do
+      class_ <- MaybeT $ FQ.getClassById classId
+      classTemplate <- MaybeT $ FQ.getClassTemplateById (class_ ^. Class.classTemplateId)
+      classType <- MaybeT $ FQ.getClassTypeById (classTemplate ^. ClassTemplate.classTypeId)
+      studio <- MaybeT $ FQ.getStudioById (classTemplate ^. ClassTemplate.studioId)
+      customerProfile <- MaybeT $ FQ.getCustomerProfileById customerProfileId
+      user <- MaybeT $ FQ.getUserById (customerProfile ^. CustomerProfile.userId)
+
+      return $ do
+        "fynder-class-type" ##
+          textySplice (classType ^. ClassType.title)
+
+        "fynder-studio" ##
+          textySplice (studio ^. Studio.name)
+
+        "fynder-class-date" ##
+          Heist.textSplice $ Text.pack $ Time.formatTime Locale.defaultTimeLocale "%B %-e at %R" (class_ ^. Class.startTs)
+
+        "customer" ## textySplice (user ^. User.name)
+
+  emailSubject = case template of
+    (Email.ClassSpaceAvailable{}) -> "A Space is Available!"
+
+
+  ------------------------------------------------------------------------------
+  textySplice = Heist.textSplice . Lens.review Fynder.texty
 
 --------------------------------------------------------------------------------
 -- | Takes a 'AMQP.Connection' and returns a callback that can be used on the
 -- outbox queue. To form the callback, IO is performed to open a 'AMQP.Channel'
 -- for the callback, so that it can publish failures.
 consumeOutbox :: AMQP.Connection
-              -> Heist.HeistState Identity
+              -> Heist.HeistState Fynder.DbRO
+              -> Pool.Pool Pg.Connection
               -> (Mail.Mail -> IO ())
               -> IO ()
-consumeOutbox rabbitMqConn heist sendMail = do
+consumeOutbox rabbitMqConn heist connectionPool sendMail = do
   rabbitMq <- AMQP.openChannel rabbitMqConn
 
   void $ AMQP.consumeMsgs rabbitMq Email.outboxQueue AMQP.Ack $
@@ -117,9 +160,9 @@ consumeOutbox rabbitMqConn heist sendMail = do
                   }
 
     tryFormEmail =
-      Error.EitherT $ return $
-        Error.note (failureMessage "Couldn't render template") $
-          emailToMail email heist
+      let mkEmail = Pool.withResource connectionPool $
+                      Fynder.runDbR (emailToMail email heist)
+      in mkEmail !? (failureMessage "Couldn't render template")
 
     trySend mail =
       let exceptionMessage e =
@@ -138,4 +181,6 @@ loadTemplates = fmap (either (error . show) id) $ do
     Heist.initHeist mempty
       { Heist.hcTemplateLocations =
           [ Heist.loadTemplates templatesDir ]
+
+      , Heist.hcLoadTimeSplices = Heist.defaultLoadTimeSplices
       }

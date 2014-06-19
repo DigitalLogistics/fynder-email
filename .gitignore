@@ -8,3 +8,8 @@ cabal-dev
 /.hpc
 /*.html
 *.tix
+*~
+fynder
+nixpkgs
+migralo
+result

@@ -1,5 +1,5 @@
 { cabal, HTTP, aeson, amqp, blazeBuilder, errors, heist, mimeMail
-, networkMetrics, optparseApplicative, postgresqlSimple
+, networkMetrics, optparseApplicative, postgresqlSimple, fynder
 , doCheck ? false
 }:
 cabal.mkDerivation (self: {
@@ -8,7 +8,7 @@ cabal.mkDerivation (self: {
   src = ./.;
   buildDepends = [
     HTTP aeson amqp blazeBuilder errors heist mimeMail networkMetrics
-    optparseApplicative postgresqlSimple
+    optparseApplicative postgresqlSimple fynder
   ];
   doCheck = false;
 })
