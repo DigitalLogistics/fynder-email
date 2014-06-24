@@ -55,7 +55,7 @@ instance Aeson.ToJSON Email
 
 --------------------------------------------------------------------------------
 data Template
-  = ClassSpaceAvailable { csaCustomerProfileId :: Fynder.CustomerProfileId
+  = ClassSpaceAvailable { csaUserId  :: Fynder.UserId
                         , csaClassId :: Fynder.ClassId
                         }
   deriving (Eq, Generic, Show)

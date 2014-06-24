@@ -27,7 +27,6 @@ import qualified Fynder.Types as Fynder
 import qualified Fynder.Types.Model.Class as Class
 import qualified Fynder.Types.Model.ClassTemplate as ClassTemplate
 import qualified Fynder.Types.Model.ClassType as ClassType
-import qualified Fynder.Types.Model.CustomerProfile as CustomerProfile
 import qualified Fynder.Types.Model.Studio as Studio
 import qualified Fynder.Types.Model.User as User
 import qualified Heist as Heist
@@ -86,13 +85,12 @@ emailToMail email heist = runMaybeT $ do
     (Email.ClassSpaceAvailable{}) -> "space-available"
 
   templateSplices = case template of
-    (Email.ClassSpaceAvailable customerProfileId classId) -> do
+    (Email.ClassSpaceAvailable userId classId) -> do
       class_ <- MaybeT $ FQ.getClassById classId
       classTemplate <- MaybeT $ FQ.getClassTemplateById (class_ ^. Class.classTemplateId)
       classType <- MaybeT $ FQ.getClassTypeById (classTemplate ^. ClassTemplate.classTypeId)
       studio <- MaybeT $ FQ.getStudioById (classTemplate ^. ClassTemplate.studioId)
-      customerProfile <- MaybeT $ FQ.getCustomerProfileById customerProfileId
-      user <- MaybeT $ FQ.getUserById (customerProfile ^. CustomerProfile.userId)
+      user <- MaybeT $ FQ.getUserById userId
 
       return $ do
         "fynder-class-type" ##
